@@ -11,4 +11,4 @@ We are designing and building an industrial robotic arm capable of:
 
 - ## Status
 
-🚧 Work in Progress
+Work in Progress
