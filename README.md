@@ -2,6 +2,8 @@
 
 A 6-axis robotic arm that can be controlled remotely through a website or a game controller, built around an Arduino Uno. Made by [Pranav Unnikrishnan and Jeff Velso for our Class 12 (CBSE) school robotics exhibition.
 
+![6-DOF Robotic Arm Image 1](arm_1.jpeg)
+![6-DOF Robotic Arm Image 2](arm_2.jpeg)
 
 ## Overview
 We built a robotic arm with six motors that can pick up and move objects using remote control. It demonstrates the basics of industrial automation and robotics: mechanical structure, motor control, and a simple user interface.
