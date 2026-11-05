@@ -11,10 +11,11 @@ We built a robotic arm with six motors that can pick up and move objects using r
 ## Features
 - 6 degrees of freedom (6 motors, [SG90, MG996R, MG90S])
 - Controlled from a web interface
-- Can also connect to a controller (PowerA Battle Dragon)
+- Can also connect to a controller (PowerA Battle Dragon Controller)
 - Arduino Uno as the main controller
 - Pick-and-place of small objects
 - 3D printed parts
+- Save positions, movements, and play them in a sequence for performing repetitive tasks
 
 ## Hardware
 - Arduino Uno
