@@ -1,0 +1,1167 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arm control</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --ground: #d9e0e6;
+    --panel: #f3f5f7;
+    --ink: #18232e;
+    --muted: #566573;
+    --line: #a9b5bf;
+    --track: #c3ccd4;
+    --out: #e3e8ec;
+    --accent: #0b57d0;
+    --accent-ink: #ffffff;
+    --ok: #1b7a4b;
+    --warn: #8a5a00;
+    --bad: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #141b22;
+      --panel: #1d2730;
+      --ink: #e6ecf1;
+      --muted: #9aa8b5;
+      --line: #3a4a58;
+      --track: #34444f;
+      --out: #232e37;
+      --accent: #6ea8ff;
+      --accent-ink: #0b1a2e;
+      --ok: #5fd394;
+      --warn: #f0b84a;
+      --bad: #ff8a80;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--ground); }
+  body {
+    margin: 0;
+    font: 15px/1.45 "Bahnschrift", "DIN Alternate", "Avenir Next Condensed", "Segoe UI", system-ui, sans-serif;
+    font-variant-numeric: tabular-nums;
+    color: var(--ink);
+  }
+  .top, main, .banner { max-width: 1180px; margin: 0 auto; padding-left: 24px; padding-right: 24px; }
+  .top {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between;
+    gap: 12px 24px; padding-top: 22px; padding-bottom: 18px;
+  }
+  h1 { margin: 0; font-size: 1.9rem; font-weight: 700; letter-spacing: -0.01em; }
+  h2 { margin: 0 0 12px; padding-top: 8px; border-top: 2px solid var(--ink); font-size: 1.05rem; font-weight: 650; }
+  .conn { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+  .sketch { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 0.92rem; }
+  select {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1.5px solid var(--line); border-radius: 3px; padding: 5px 6px;
+  }
+  select:disabled { opacity: 0.55; }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--line); flex: none; }
+  .dot.wait { background: var(--warn); }
+  .dot.on { background: var(--ok); }
+  .dot.err { background: var(--bad); }
+  .banner {
+    margin-bottom: 12px; padding: 10px 14px;
+    background: var(--panel); border-left: 4px solid var(--bad);
+  }
+
+  button, input, summary { font: inherit; color: inherit; }
+  button {
+    padding: 7px 14px; border: 1.5px solid var(--ink); border-radius: 3px;
+    background: transparent; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--track); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+  button.small { padding: 3px 9px; font-size: 0.9rem; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  input[type=number], input[type=text] {
+    padding: 5px 7px; border: 1.5px solid var(--line); border-radius: 3px; background: var(--panel); width: 100%;
+  }
+
+  main { padding-bottom: 56px; }
+  .layout {
+    display: grid; gap: 30px 44px; align-items: start;
+    grid-template-columns: minmax(300px, 400px) minmax(0, 1fr);
+  }
+  .controls { display: grid; gap: 30px; min-width: 0; }
+  /* The live view stays in view while scrolling, but only inside .layout, and never taller than the window. */
+  .stage { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; padding-right: 2px; }
+  .logbox { margin-top: 40px; }
+  @media (max-width: 860px) {
+    .layout { grid-template-columns: 1fr; }
+    .stage { position: static; max-height: none; overflow: visible; }
+  }
+
+  /* live schematic */
+  #schem { width: 100%; height: auto; max-height: min(400px, 42vh); display: block; background: var(--panel); border: 1.5px solid var(--line); }
+  #schem text { font-size: 11px; fill: var(--muted); font-family: inherit; }
+  .ground { stroke: var(--line); stroke-width: 2; }
+  .solid { fill: var(--track); stroke: var(--ink); stroke-width: 1.5; }
+  .link { stroke: var(--ink); stroke-width: 8; stroke-linecap: round; }
+  .link.thin { stroke-width: 5; }
+  .jaw { stroke: var(--accent); stroke-width: 4; stroke-linecap: round; }
+  .pivot { fill: var(--panel); stroke: var(--ink); stroke-width: 2.5; }
+  .dial { fill: none; stroke: var(--line); stroke-width: 2; }
+  .needle { stroke: var(--accent); stroke-width: 3; stroke-linecap: round; }
+  .note { margin: 8px 0 0; color: var(--muted); font-size: 0.88rem; }
+  #stateLine { margin: 12px 0 10px; min-height: 1.45em; font-weight: 600; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; }
+  .speed { display: grid; grid-template-columns: auto 1fr 2rem; gap: 10px; align-items: center; margin-top: 14px; }
+
+  /* sliders */
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 30px; margin: 0; background: transparent; cursor: pointer; }
+  input[type=range] {
+    --lo: 0%; --hi: 100%; --pct: 50%;
+    --bar: linear-gradient(to right,
+      var(--out) 0 var(--lo),
+      var(--accent) var(--lo) var(--pct),
+      var(--track) var(--pct) var(--hi),
+      var(--out) var(--hi) 100%);
+  }
+  input[type=range]::-webkit-slider-runnable-track { height: 8px; border-radius: 4px; background: var(--bar); }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 22px; height: 22px; margin-top: -7px; border-radius: 50%;
+    background: var(--panel); border: 3px solid var(--accent);
+  }
+  input[type=range]::-moz-range-track { height: 8px; border-radius: 4px; background: var(--bar); }
+  input[type=range]::-moz-range-progress { height: 8px; border-radius: 4px; background: transparent; }
+  input[type=range]::-moz-range-thumb { width: 15px; height: 15px; border-radius: 50%; background: var(--panel); border: 3px solid var(--accent); }
+
+  .joint {
+    display: grid; grid-template-columns: 8rem 2rem minmax(0, 1fr) 2rem 4.4rem;
+    gap: 2px 8px; align-items: center; padding: 8px 0 9px; border-bottom: 1px solid var(--line);
+  }
+  .joint label { display: flex; flex-direction: column; line-height: 1.2; }
+  .joint .pin { color: var(--muted); font-size: 0.85rem; }
+  .joint .nudge { padding: 2px 0; width: 2rem; }
+  .joint > label { grid-row: 1 / span 2; align-self: start; padding-top: 4px; }
+  .joint .deg { display: flex; align-items: center; gap: 3px; }
+  .joint .deg input { padding: 4px 4px; text-align: right; }
+
+  details { margin-top: 14px; }
+  summary { cursor: pointer; font-weight: 600; }
+  .range {
+    grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px;
+    font-size: 0.88rem; color: var(--muted);
+  }
+  .range .lbl { display: inline-flex; align-items: center; gap: 4px; }
+  .range input[type=number] { width: 3.9rem; padding: 2px 4px; text-align: right; font-size: 0.88rem; }
+  .range button { padding: 1px 8px; font-size: 0.82rem; border-width: 1px; }
+
+  .joint { padding-left: 8px; padding-right: 8px; }
+  .joint.driven { background: var(--panel); box-shadow: inset 4px 0 0 var(--accent); }
+
+  /* controller */
+  .padrow { display: grid; grid-template-columns: auto minmax(0, 1fr) 4.5rem; gap: 10px; align-items: center; margin: 10px 0 4px; }
+  fieldset.invert { border: 0; margin: 10px 0 0; padding: 0; }
+  fieldset.invert legend { padding: 0; font-weight: 600; margin-bottom: 4px; }
+  #padInvert { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+  #padInvert label { display: inline-flex; align-items: center; gap: 6px; }
+  dl.map { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 18px; margin: 10px 0 0; }
+  dl.map dt { font-weight: 600; }
+  dl.map dd { margin: 0; }
+
+  /* poses */
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+  .row label { display: inline-flex; align-items: center; gap: 6px; }
+  .row input[type=number] { width: 6rem; }
+  ol#poselist { list-style: none; margin: 0 0 12px; padding: 0; }
+  #poselist li {
+    display: grid; grid-template-columns: minmax(7rem, 11rem) minmax(0, 1fr) auto; gap: 6px 12px; align-items: center;
+    padding: 7px 8px; border-bottom: 1px solid var(--line); border-left: 4px solid transparent;
+  }
+  #poselist li.playing { border-left-color: var(--accent); background: var(--panel); }
+  #poselist li.empty { display: block; color: var(--muted); border-left: 0; }
+  #poselist .vals { color: var(--muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+  #poselist .btns { display: flex; flex-wrap: wrap; gap: 4px; }
+  @media (max-width: 560px) {
+    .joint { grid-template-columns: 6.2rem 1.8rem minmax(0, 1fr) 1.8rem 3.8rem; gap: 2px 5px; }
+    #poselist li { grid-template-columns: 1fr; }
+  }
+
+  /* log */
+  #log {
+    margin: 10px 0 8px; padding: 10px; height: 200px; overflow: auto; white-space: pre-wrap;
+    background: var(--panel); border: 1.5px solid var(--line);
+    font: 12.5px/1.4 ui-monospace, "Cascadia Mono", Consolas, Menlo, monospace;
+  }
+  #log .tx { color: var(--muted); }
+  #log .err { color: var(--bad); }
+  .rawrow { display: flex; gap: 8px; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%);
+    max-width: min(92vw, 560px); padding: 10px 16px; background: var(--ink); color: var(--ground);
+    border-radius: 3px; opacity: 0; pointer-events: none; transition: opacity 0.15s;
+  }
+  #toast.show { opacity: 1; }
+  @media (prefers-reduced-motion: reduce) { #toast { transition: none; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>Arm control</h1>
+  <div class="conn">
+    <span id="dot" class="dot" aria-hidden="true"></span>
+    <span id="connText" role="status" aria-live="polite">Not connected</span>
+    <label class="sketch" for="protocol">Sketch
+      <select id="protocol">
+        <option value="legacy">Original, 9600 baud</option>
+        <option value="new">New, 115200 baud</option>
+      </select>
+    </label>
+    <button id="connectBtn" class="primary" type="button">Connect</button>
+  </div>
+</header>
+
+<p id="unsupported" class="banner" hidden>
+  This browser cannot open serial ports. Open this file in Chrome or Edge on a desktop computer.
+  Firefox and Safari do not support Web Serial.
+</p>
+
+<main>
+  <div class="layout">
+  <section class="stage" aria-labelledby="h-live">
+    <h2 id="h-live">Live view</h2>
+    <svg id="schem" viewBox="0 0 340 340" role="img" aria-label="Schematic of the arm showing the current joint angles">
+      <line class="ground" x1="16" y1="236" x2="324" y2="236"/>
+      <rect class="solid" x="126" y="214" width="88" height="22"/>
+      <rect class="solid" x="156" y="190" width="28" height="24"/>
+      <line id="armL1" class="link"/>
+      <line id="armL2" class="link"/>
+      <line id="armL3" class="link thin"/>
+      <line id="jawA" class="jaw"/>
+      <line id="jawB" class="jaw"/>
+      <circle id="pv0" class="pivot" r="8"/>
+      <circle id="pv1" class="pivot" r="7"/>
+      <circle id="pv2" class="pivot" r="6"/>
+      <g transform="translate(95 300)">
+        <path class="dial" d="M-42 0 A42 42 0 0 1 42 0 Z"/>
+        <line id="baseNeedle" class="needle" x1="0" y1="0" x2="0" y2="-34"/>
+        <circle class="pivot" r="4"/>
+        <text x="0" y="22" text-anchor="middle">Base</text>
+        <text x="-42" y="-6" text-anchor="middle">180</text>
+        <text x="42" y="-6" text-anchor="middle">0</text>
+      </g>
+      <g transform="translate(245 288)">
+        <circle class="dial" r="26"/>
+        <line id="rollNeedle" class="needle" x1="0" y1="0" x2="0" y2="-21"/>
+        <circle class="pivot" r="4"/>
+        <text x="0" y="46" text-anchor="middle">Wrist roll</text>
+      </g>
+    </svg>
+    <p class="note">Schematic assumes 90° is the neutral pose for every joint. Your arm may bend the other way.</p>
+    <p id="stateLine" aria-live="polite">Not connected. The sliders only preview the arm.</p>
+    <div class="actions">
+      <button id="homeBtn" class="arm-act" type="button" disabled>Home</button>
+      <button id="stopBtn" class="arm-act" type="button" disabled>Stop</button>
+      <button id="releaseBtn" class="arm-act" type="button" disabled title="Cuts holding torque. The arm may drop.">Release servos</button>
+    </div>
+    <div class="speed">
+      <label for="speed">Speed</label>
+      <input id="speed" type="range" min="1" max="10" step="1" value="2">
+      <output id="speedOut" for="speed">2</output>
+    </div>
+  </section>
+
+  <div class="controls">
+  <section class="joints" aria-labelledby="h-joints">
+    <h2 id="h-joints">Joints</h2>
+    <div id="joints"></div>
+    <p class="note">Each joint has its own range. The darker part of a track is where that joint may move. The app enforces the range, and the new sketch enforces it on the Arduino as well. Ranges are saved in this browser.</p>
+  </section>
+
+  <section class="poses" aria-labelledby="h-poses">
+    <h2 id="h-poses">Poses</h2>
+    <div class="row">
+      <button id="savePoseBtn" type="button">Save current pose</button>
+      <button id="exportBtn" type="button">Export</button>
+      <button id="importBtn" type="button">Import</button>
+      <input id="importFile" type="file" accept="application/json,.json" hidden>
+    </div>
+    <ol id="poselist"></ol>
+    <div class="row">
+      <button id="playBtn" class="primary" type="button" disabled>Play sequence</button>
+      <label>Pause <input id="dwell" type="number" min="0" max="60000" step="100" value="500"> ms</label>
+      <label><input id="loopCb" type="checkbox"> Repeat</label>
+    </div>
+  </section>
+
+  <section class="controller" aria-labelledby="h-pad">
+    <h2 id="h-pad">Controller</h2>
+    <p id="padStatus" aria-live="polite">No controller detected. Connect one, then press any button on it.</p>
+    <div class="padrow">
+      <label for="padRate">Sensitivity</label>
+      <input id="padRate" type="range" min="10" max="180" step="5" value="60">
+      <output id="padRateOut" for="padRate">60°/s</output>
+    </div>
+    <fieldset class="invert">
+      <legend>Reverse direction</legend>
+      <div id="padInvert"></div>
+    </fieldset>
+    <details>
+      <summary>Button layout</summary>
+      <dl class="map">
+        <dt>Left stick, left and right</dt><dd>Base</dd>
+        <dt>Left stick, up and down</dt><dd>Shoulder</dd>
+        <dt>Right stick, up and down</dt><dd>Elbow</dd>
+        <dt>LB and RB</dt><dd>Wrist pitch, down and up</dd>
+        <dt>Right stick, left and right</dt><dd>Wrist roll</dd>
+        <dt>LT and RT</dt><dd>Gripper, down and up</dd>
+        <dt>D-pad left and right</dt><dd>Arm speed, slower and faster</dd>
+        <dt>A</dt><dd>Home</dd>
+        <dt>B</dt><dd>Stop</dd>
+        <dt>X</dt><dd>Save current pose</dd>
+        <dt>Y</dt><dd>Play or stop the sequence</dd>
+      </dl>
+      <p class="note">Right and up raise an angle. Use Reverse direction if a joint moves the wrong way. Names follow an Xbox controller; on a PlayStation controller, LB and RB are L1 and R1, LT and RT are L2 and R2, and A, B, X, Y are the cross, circle, square and triangle. Keep this tab in the foreground, because browsers pause controller input in background tabs.</p>
+    </details>
+  </section>
+  </div>
+  </div>
+
+  <details class="logbox">
+    <summary>Serial log</summary>
+    <pre id="log" aria-label="Serial log"></pre>
+    <div class="rawrow">
+      <input id="raw" type="text" placeholder="Send a raw command, for example P" autocomplete="off" aria-label="Raw command">
+      <button id="rawBtn" type="button">Send</button>
+    </div>
+  </details>
+</main>
+
+<div id="toast" role="alert"></div>
+
+<script>
+(() => {
+  'use strict';
+
+  const NUM = 6;
+  const JOINTS = [
+    { name: 'Base', pin: 7 },
+    { name: 'Shoulder', pin: 6 },
+    { name: 'Elbow', pin: 5 },
+    { name: 'Wrist pitch', pin: 4 },
+    { name: 'Wrist roll', pin: 3 },
+    { name: 'Gripper', pin: 2 },
+  ];
+  const SHORT = ['Base', 'Shoulder', 'Elbow', 'Pitch', 'Roll', 'Gripper'];
+  const BAUD_NEW = 115200;     // robot_arm.ino
+  const BAUD_LEGACY = 9600;   // the original index/value sketch
+  const TICK_MS = 15;     // must match the sketch
+  const NEUTRAL = 90;
+
+  const $ = (s) => document.querySelector(s);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const store = {
+    get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage unavailable */ } },
+  };
+
+  // ------------------------------------------------------------------ state
+  const angles = Array(NUM).fill(NEUTRAL);
+  let limits = loadLimits();
+  let speed = clamp(parseInt(store.get('arm.speed', 2), 10) || 2, 1, 10);
+  let poses = loadPoses();
+  let protocol = store.get('arm.protocol', 'legacy') === 'new' ? 'new' : 'legacy';
+
+  let port = null, writer = null, reader = null;
+  let ready = false, closing = false, syncNext = false;
+  let writeChain = Promise.resolve();
+  let handshakeTimer = null, flushTimer = null;
+  const pending = new Map();
+  let idleWaiters = [];
+  let playing = false;
+
+  const encoder = new TextEncoder();
+
+  function loadLimits() {
+    const d = store.get('arm.limits', null);
+    const ok = Array.isArray(d) && d.length === NUM && d.every((l) =>
+      Array.isArray(l) && Number.isInteger(l[0]) && Number.isInteger(l[1]) && l[0] >= 0 && l[1] <= 180 && l[0] < l[1]);
+    return ok ? d : Array.from({ length: NUM }, () => [0, 180]);
+  }
+  function loadPoses() {
+    const d = store.get('arm.poses', []);
+    if (!Array.isArray(d)) return [];
+    return d.filter((p) => p && typeof p.name === 'string' && Array.isArray(p.angles) &&
+      p.angles.length === NUM && p.angles.every(Number.isFinite));
+  }
+  const savePoses = () => store.set('arm.poses', poses);
+
+  // --------------------------------------------------------------------- ui
+  const dot = $('#dot'), connText = $('#connText'), connectBtn = $('#connectBtn');
+  const stateLine = $('#stateLine'), toastEl = $('#toast'), logPre = $('#log');
+  const sliders = [], numbers = [], minIn = [], maxIn = [], rows = [];
+
+  function setConn(text, mode) { connText.textContent = text; dot.className = 'dot ' + mode; }
+  function setStateLine(t) { stateLine.textContent = t; }
+
+  let toastTimer = null;
+  function toast(msg) {
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 6000);
+  }
+
+  const logLines = [];
+  let logQueued = false;
+  function log(text, cls) {
+    logLines.push({ text, cls });
+    if (logLines.length > 300) logLines.shift();
+    if (logQueued) return;
+    logQueued = true;
+    requestAnimationFrame(() => {
+      logQueued = false;
+      const stick = logPre.scrollTop + logPre.clientHeight >= logPre.scrollHeight - 8;
+      logPre.textContent = '';
+      for (const l of logLines) {
+        const s = document.createElement('span');
+        if (l.cls) s.className = l.cls;
+        s.textContent = l.text + '\n';
+        logPre.appendChild(s);
+      }
+      if (stick) logPre.scrollTop = logPre.scrollHeight;
+    });
+  }
+
+  // Fill for the plain sliders (speed, sensitivity): no limit shading, just up to the thumb.
+  function paintSlider(el) {
+    const lo = +el.min, hi = +el.max;
+    el.style.setProperty('--lo', '0%');
+    el.style.setProperty('--hi', '100%');
+    el.style.setProperty('--pct', (hi > lo ? ((+el.value - lo) / (hi - lo)) * 100 : 0) + '%');
+  }
+
+  function setTrack(i) {
+    const el = sliders[i];
+    const [lo, hi] = limits[i];
+    el.style.setProperty('--lo', (lo / 180) * 100 + '%');
+    el.style.setProperty('--hi', (hi / 180) * 100 + '%');
+    el.style.setProperty('--pct', (angles[i] / 180) * 100 + '%');
+  }
+
+  function setActionsEnabled(on) {
+    document.querySelectorAll('.arm-act').forEach((b) => { b.disabled = !on; });
+    const rel = $('#releaseBtn');
+    rel.disabled = !on || protocol === 'legacy';
+    rel.title = protocol === 'legacy' ? 'Not available with the original sketch' : 'Cuts holding torque. The arm may drop.';
+    $('#playBtn').disabled = !on;
+    renderPoses();
+  }
+
+  function buildJoints() {
+    const wrap = $('#joints');
+    // Gripper at the top, base at the bottom. Indices and pins are unchanged; only the on-screen order is reversed.
+    JOINTS.map((_, k) => k).reverse().forEach((i) => {
+      const j = JOINTS[i];
+      const row = document.createElement('div');
+      row.className = 'joint';
+
+      const lab = document.createElement('label');
+      lab.htmlFor = 's' + i;
+      const nm = document.createElement('span'); nm.textContent = j.name;
+      const pn = document.createElement('span'); pn.className = 'pin'; pn.textContent = 'pin ' + j.pin;
+      lab.append(nm, pn);
+
+      const minus = document.createElement('button');
+      minus.type = 'button'; minus.className = 'nudge'; minus.textContent = '\u2212';
+      minus.setAttribute('aria-label', j.name + ' down 1 degree');
+      minus.addEventListener('click', () => setAngle(i, angles[i] - 1));
+
+      const plus = document.createElement('button');
+      plus.type = 'button'; plus.className = 'nudge'; plus.textContent = '+';
+      plus.setAttribute('aria-label', j.name + ' up 1 degree');
+      plus.addEventListener('click', () => setAngle(i, angles[i] + 1));
+
+      const s = document.createElement('input');
+      s.type = 'range'; s.id = 's' + i; s.min = 0; s.max = 180; s.step = 1; s.value = angles[i];
+      s.addEventListener('input', () => setAngle(i, s.value));
+
+      const deg = document.createElement('div'); deg.className = 'deg';
+      const n = document.createElement('input');
+      n.type = 'number'; n.id = 'n' + i; n.min = 0; n.max = 180; n.step = 1; n.value = angles[i];
+      n.setAttribute('aria-label', j.name + ' angle in degrees');
+      n.addEventListener('change', () => setAngle(i, n.value));
+      deg.append(n, document.createTextNode('\u00b0'));
+
+      // range of motion: lower and upper limit, each settable by typing or from the current position
+      const range = document.createElement('div');
+      range.className = 'range';
+      range.setAttribute('role', 'group');
+      range.setAttribute('aria-label', j.name + ' range of motion');
+
+      const lo = document.createElement('input');
+      lo.type = 'number'; lo.id = 'min' + i; lo.min = 0; lo.max = 179; lo.step = 1;
+      lo.setAttribute('aria-label', j.name + ' lower limit in degrees');
+      lo.addEventListener('change', () => setLimit(i, parseInt(lo.value, 10), limits[i][1]));
+      const hi = document.createElement('input');
+      hi.type = 'number'; hi.id = 'max' + i; hi.min = 1; hi.max = 180; hi.step = 1;
+      hi.setAttribute('aria-label', j.name + ' upper limit in degrees');
+      hi.addEventListener('change', () => setLimit(i, limits[i][0], parseInt(hi.value, 10)));
+
+      const loLbl = document.createElement('span'); loLbl.className = 'lbl';
+      loLbl.append(document.createTextNode('Range min'), lo, document.createTextNode('\u00b0'));
+      const hiLbl = document.createElement('span'); hiLbl.className = 'lbl';
+      hiLbl.append(document.createTextNode('max'), hi, document.createTextNode('\u00b0'));
+
+      const mkBtn = (text, aria, fn) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.textContent = text; b.id = text === 'Full' ? 'full' + i : '';
+        b.setAttribute('aria-label', j.name + ' ' + aria);
+        b.addEventListener('click', fn);
+        return b;
+      };
+      const setMin = mkBtn('Min = now', 'set lower limit to current angle', () => setLimit(i, angles[i], limits[i][1]));
+      setMin.id = 'setmin' + i;
+      const setMax = mkBtn('Max = now', 'set upper limit to current angle', () => setLimit(i, limits[i][0], angles[i]));
+      setMax.id = 'setmax' + i;
+      const full = mkBtn('Full', 'reset range to 0 to 180', () => setLimit(i, 0, 180));
+      range.append(loLbl, setMin, hiLbl, setMax, full);
+
+      row.append(lab, minus, s, plus, deg, range);
+      wrap.appendChild(row);
+      sliders[i] = s; numbers[i] = n;
+      minIn[i] = lo; maxIn[i] = hi;
+      rows[i] = row;
+    });
+    applyLimitsUI();
+  }
+
+  function applyLimitsUI() {
+    for (let i = 0; i < NUM; i++) {
+      const [lo, hi] = limits[i];
+      numbers[i].min = lo; numbers[i].max = hi;
+      minIn[i].value = lo; maxIn[i].value = hi;
+      angles[i] = clamp(angles[i], lo, hi);
+      sliders[i].value = angles[i]; numbers[i].value = angles[i];
+      setTrack(i);
+    }
+    drawArm();
+  }
+
+  // Change one joint's allowed range (0 <= lo < hi <= 180), save it, and tell the Arduino.
+  function setLimit(i, lo, hi) {
+    if (!(Number.isInteger(lo) && Number.isInteger(hi) && lo >= 0 && hi <= 180 && lo < hi)) {
+      toast(`${JOINTS[i].name}: the lower limit must be below the upper limit, both between 0 and 180.`);
+      minIn[i].value = limits[i][0]; maxIn[i].value = limits[i][1];
+      return;
+    }
+    limits[i] = [lo, hi];
+    store.set('arm.limits', limits);
+    applyLimitsUI();
+    if (ready) {
+      if (protocol === 'legacy') {
+        const next = lg.target.map((t, k) => clamp(t, limits[k][0], limits[k][1]));
+        if (next.some((t, k) => t !== lg.target[k])) {
+          lg.target = next;
+          lgStart();
+          setMoving();
+        }
+      } else {
+        send(`L ${i} ${lo} ${hi}`);
+      }
+    }
+  }
+
+  function setAngle(i, v, { send: doSend = true } = {}) {
+    v = Math.round(Number(v));
+    if (!Number.isFinite(v)) v = angles[i];
+    v = clamp(v, limits[i][0], limits[i][1]);
+    angles[i] = v;
+    sliders[i].value = v; numbers[i].value = v;
+    setTrack(i);
+    drawArm();
+    if (doSend) queueMove(i, v);
+  }
+
+  // ------------------------------------------------------------- schematic
+  const el = (id) => document.getElementById(id);
+  function pt(x, y, deg, len) {
+    const r = (deg * Math.PI) / 180;
+    return [x + Math.cos(r) * len, y - Math.sin(r) * len];
+  }
+  function setLine(id, a, b) {
+    const e = el(id);
+    e.setAttribute('x1', a[0].toFixed(1)); e.setAttribute('y1', a[1].toFixed(1));
+    e.setAttribute('x2', b[0].toFixed(1)); e.setAttribute('y2', b[1].toFixed(1));
+  }
+  function setCircle(id, p) { const e = el(id); e.setAttribute('cx', p[0].toFixed(1)); e.setAttribute('cy', p[1].toFixed(1)); }
+  function drawArm() {
+    const [base, shoulder, elbow, wrist, roll, grip] = angles;
+    const a1 = shoulder;
+    const a2 = a1 - (elbow - NEUTRAL);
+    const a3 = a2 - (wrist - NEUTRAL);
+    const p0 = [170, 190];
+    const p1 = pt(p0[0], p0[1], a1, 62);
+    const p2 = pt(p1[0], p1[1], a2, 54);
+    const p3 = pt(p2[0], p2[1], a3, 26);
+    setLine('armL1', p0, p1); setLine('armL2', p1, p2); setLine('armL3', p2, p3);
+    const half = (grip / 180) * 40;
+    setLine('jawA', p3, pt(p3[0], p3[1], a3 + half, 22));
+    setLine('jawB', p3, pt(p3[0], p3[1], a3 - half, 22));
+    setCircle('pv0', p0); setCircle('pv1', p1); setCircle('pv2', p2);
+    const bn = el('baseNeedle');
+    const bt = pt(0, 0, base, 34);
+    bn.setAttribute('x2', bt[0].toFixed(1)); bn.setAttribute('y2', bt[1].toFixed(1));
+    el('rollNeedle').setAttribute('transform', `rotate(${roll - NEUTRAL})`);
+  }
+
+  // ----------------------------------------------------------------- serial
+  function send(line) {
+    if (!writer) return Promise.resolve();
+    const data = encoder.encode(line + '\n');
+    const w = writer;
+    writeChain = writeChain.then(() => w.write(data)).catch((e) => {
+      log('Write failed: ' + e.message, 'err');
+    });
+    log('> ' + line, 'tx');
+    return writeChain;
+  }
+
+  function queueMove(i, a) {
+    if (!ready) return;
+    if (protocol === 'legacy') { lg.target[i] = a; lgStart(); setMoving(); return; }
+    pending.set(i, a);
+    if (!flushTimer) flushTimer = setTimeout(flush, 30);
+  }
+  function flush() {
+    flushTimer = null;
+    if (!ready) { pending.clear(); return; }
+    for (const [i, a] of pending) send(`S ${i} ${a}`);
+    pending.clear();
+    setMoving();
+  }
+  function setMoving() { setStateLine('Moving\u2026'); }
+
+  function goTo(target) {
+    if (!ready) return 0;
+    const prev = angles.slice();
+    target.forEach((a, i) => setAngle(i, a, { send: false }));
+    pending.clear();
+    clearTimeout(flushTimer); flushTimer = null;
+    if (protocol === 'legacy') {
+      angles.forEach((a, i) => { lg.target[i] = a; });
+      lgStart();
+    } else {
+      send('A ' + angles.join(' '));
+    }
+    setMoving();
+    return Math.max(...angles.map((a, i) => Math.abs(a - prev[i])));
+  }
+
+  // ---- original sketch ("<index> <angle>" at 9600 baud) --------------------------------
+  // That sketch writes each angle straight to the servo, never replies and has no limits, so
+  // the app does the easing, the limits and the "finished" detection itself. Joint 0 (base,
+  // pin 7) is index 6 and joint 5 (gripper, pin 2) is index 1; index 5 also drives the
+  // mirrored servo on pin 8, which the sketch takes care of.
+  const LG_TICK_MS = 40;   // six joints at ~6 bytes each stays within what 9600 baud can carry
+  const lg = { cur: [], target: [], sent: [], timer: null };
+  function lgReset() {
+    lgStop();
+    lg.cur = angles.slice();
+    lg.target = angles.slice();
+    lg.sent = angles.map(Math.round);
+  }
+  function lgStart() { if (!lg.timer) lg.timer = setInterval(lgTick, LG_TICK_MS); }
+  function lgStop() { clearInterval(lg.timer); lg.timer = null; }
+  function lgTick() {
+    if (!ready || protocol !== 'legacy') { lgStop(); return; }
+    const step = speed * (LG_TICK_MS / TICK_MS);     // same degrees per second as the new sketch
+    let moved = false;
+    for (let i = 0; i < NUM; i++) {
+      const diff = lg.target[i] - lg.cur[i];
+      if (diff !== 0) {
+        lg.cur[i] = Math.abs(diff) <= step ? lg.target[i] : lg.cur[i] + Math.sign(diff) * step;
+        moved = true;
+      }
+      const out = Math.round(lg.cur[i]);
+      if (out !== lg.sent[i]) { send(`${NUM - i} ${out}`); lg.sent[i] = out; }
+    }
+    if (!moved) { lgStop(); onIdle(); }
+  }
+
+  function waitIdle(ms) {
+    return new Promise((resolve) => {
+      const done = (v) => { clearTimeout(t); idleWaiters = idleWaiters.filter((f) => f !== done); resolve(v); };
+      const t = setTimeout(() => done(false), ms);
+      idleWaiters.push(done);
+    });
+  }
+  function flushIdleWaiters() { idleWaiters.slice().forEach((f) => f(true)); }
+
+  function markReady() {
+    if (ready) return;
+    ready = true;
+    clearTimeout(handshakeTimer);
+    if (protocol === 'legacy') {
+      lgReset();
+      setConn('Connected (original sketch)', 'on');
+      setStateLine('Connected. This sketch cannot report where the arm is, so each joint may jump on its first move.');
+      setActionsEnabled(true);
+      return;
+    }
+    setConn('Connected', 'on');
+    setStateLine('Connected. The sliders now move the arm.');
+    send(`V ${speed}`);
+    limits.forEach((l, i) => send(`L ${i} ${l[0]} ${l[1]}`));
+    syncNext = true;
+    send('P');
+    setActionsEnabled(true);
+  }
+
+  function onPos(v) {
+    if (syncNext) {
+      syncNext = false;
+      v.forEach((a, i) => setAngle(i, a, { send: false }));
+    }
+    onIdle();
+  }
+
+  function onIdle() {
+    setStateLine('Holding position.');
+    flushIdleWaiters();
+  }
+
+  function onLine(line) {
+    if (line === 'OK') return;
+    log('< ' + line, line.startsWith('ERR') ? 'err' : 'rx');
+    if (line.startsWith('READY ARM6') || line.startsWith('ARM6')) { markReady(); return; }
+    if (line.startsWith('POS')) {
+      const v = line.split(/\s+/).slice(1).map(Number);
+      if (v.length === NUM && v.every(Number.isFinite)) onPos(v);
+      return;
+    }
+    if (line.startsWith('ERR')) toast('Arduino: ' + line.slice(4));
+  }
+
+  async function connect() {
+    if (!('serial' in navigator)) return;
+    let p;
+    try {
+      p = await navigator.serial.requestPort();
+    } catch (e) {
+      if (e.name !== 'NotFoundError') log('Port selection failed: ' + e.message, 'err');
+      return;
+    }
+    try {
+      await p.open({ baudRate: protocol === 'legacy' ? BAUD_LEGACY : BAUD_NEW });
+    } catch (e) {
+      log('Open failed: ' + e.message, 'err');
+      setConn('Could not open the port', 'err');
+      toast('Could not open the port. Close the Arduino IDE Serial Monitor and any other program using it, then try again.');
+      return;
+    }
+    port = p;
+    writer = port.writable.getWriter();
+    reader = port.readable.getReader();
+    ready = false; closing = false; syncNext = false;
+    writeChain = Promise.resolve();
+    connectBtn.textContent = 'Disconnect';
+    $('#protocol').disabled = true;
+    setConn('Connecting, waiting for the Arduino to restart\u2026', 'wait');
+    readLoop();
+    if (protocol === 'legacy') {
+      // The original sketch never talks back, so there is nothing to wait for except the board's restart.
+      handshakeTimer = setTimeout(markReady, 2600);
+      return;
+    }
+    handshakeTimer = setTimeout(() => {
+      if (ready) return;
+      send('I');
+      handshakeTimer = setTimeout(() => {
+        if (ready) return;
+        setConn('Connected, but the Arduino did not answer', 'err');
+        toast('No reply. Check that robot_arm.ino is uploaded, the board is the one you picked, and the baud rate is 115200.');
+      }, 1800);
+    }, 2600);
+  }
+
+  async function readLoop() {
+    const dec = new TextDecoder();
+    let buf = '';
+    const myReader = reader;
+    try {
+      for (;;) {
+        const { value, done } = await myReader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line) onLine(line);
+        }
+        if (buf.length > 1000) buf = '';
+      }
+    } catch (e) {
+      if (!closing) log('Read error: ' + e.message, 'err');
+    } finally {
+      await teardown();
+    }
+  }
+
+  async function teardown() {
+    const unexpected = !closing;
+    clearTimeout(handshakeTimer);
+    clearTimeout(flushTimer); flushTimer = null;
+    pending.clear();
+    lgStop();
+    ready = false;
+    stopPlayback();
+    try { reader && reader.releaseLock(); } catch { /* already released */ }
+    try { await writeChain; } catch { /* ignore */ }
+    try { writer && writer.releaseLock(); } catch { /* already released */ }
+    try { port && await port.close(); } catch (e) { log('Close: ' + e.message, 'err'); }
+    reader = writer = port = null;
+    closing = false;
+    flushIdleWaiters();
+    connectBtn.textContent = 'Connect';
+    $('#protocol').disabled = false;
+    setConn(unexpected ? 'Connection lost' : 'Not connected', unexpected ? 'err' : 'off');
+    setStateLine('Not connected. The sliders only preview the arm.');
+    setActionsEnabled(false);
+    if (unexpected) toast('The connection dropped. Check the USB cable, then connect again.');
+  }
+
+  async function disconnect() {
+    if (!port || !reader) return;
+    closing = true;
+    stopPlayback();
+    try { await reader.cancel(); } catch { /* ignore */ }
+  }
+
+  // ---------------------------------------------------------------- actions
+  function homeAll() {
+    stopPlayback();
+    goTo(Array(NUM).fill(NEUTRAL));
+  }
+
+  function stopMotion() {
+    stopPlayback();
+    pending.clear();
+    clearTimeout(flushTimer); flushTimer = null;
+    if (!ready) return;
+    if (protocol === 'legacy') {
+      lgStop();
+      lg.cur = lg.cur.map(Math.round);
+      lg.target = lg.cur.slice();
+      lg.cur.forEach((a, i) => setAngle(i, a, { send: false }));
+      onIdle();
+      return;
+    }
+    syncNext = true;
+    send('X');
+  }
+
+  function onSpeed() {
+    speed = parseInt($('#speed').value, 10);
+    $('#speedOut').textContent = speed;
+    store.set('arm.speed', speed);
+    paintSlider($('#speed'));
+    if (ready && protocol !== 'legacy') send(`V ${speed}`);
+  }
+
+  // ------------------------------------------------------------------ poses
+  function renderPoses() {
+    const ul = $('#poselist');
+    ul.textContent = '';
+    if (!poses.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = 'No poses yet. Move the arm where you want it, then choose Save current pose.';
+      ul.appendChild(li);
+      return;
+    }
+    poses.forEach((p, idx) => {
+      const li = document.createElement('li');
+
+      const name = document.createElement('input');
+      name.type = 'text'; name.value = p.name; name.maxLength = 40;
+      name.setAttribute('aria-label', 'Pose name');
+      name.addEventListener('change', () => { p.name = name.value.trim() || 'Pose ' + (idx + 1); savePoses(); });
+
+      const vals = document.createElement('span');
+      vals.className = 'vals';
+      vals.textContent = JOINTS.map((_, k) => k).reverse().map((k) => `${SHORT[k]} ${p.angles[k]}`).join(', ');
+
+      const btns = document.createElement('div');
+      btns.className = 'btns';
+      const mk = (label, aria, fn, dis) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'small'; b.textContent = label;
+        b.setAttribute('aria-label', aria + ' ' + p.name);
+        if (dis) b.disabled = true;
+        b.addEventListener('click', fn);
+        return b;
+      };
+      btns.append(
+        mk('Go', 'Move to', () => { if (!playing) goTo(p.angles); }, !ready || playing),
+        mk('Update', 'Overwrite with current angles:', () => { p.angles = angles.slice(); savePoses(); renderPoses(); }),
+        mk('Up', 'Move up', () => movePose(idx, -1), idx === 0),
+        mk('Down', 'Move down', () => movePose(idx, 1), idx === poses.length - 1),
+        mk('Delete', 'Delete', () => { poses.splice(idx, 1); savePoses(); renderPoses(); }),
+      );
+      li.append(name, vals, btns);
+      ul.appendChild(li);
+    });
+  }
+
+  function movePose(idx, d) {
+    const j = idx + d;
+    if (j < 0 || j >= poses.length) return;
+    [poses[idx], poses[j]] = [poses[j], poses[idx]];
+    savePoses(); renderPoses();
+  }
+
+  function savePose() {
+    poses.push({ name: 'Pose ' + (poses.length + 1), angles: angles.slice() });
+    savePoses(); renderPoses();
+  }
+
+  function exportPoses() {
+    const blob = new Blob([JSON.stringify(poses, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'arm-poses.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  }
+
+  function importPoses(text) {
+    let data;
+    try { data = JSON.parse(text); } catch { toast('That file is not valid JSON.'); return; }
+    if (!Array.isArray(data)) { toast('Expected a list of poses.'); return; }
+    const out = [];
+    for (const p of data) {
+      if (p && typeof p.name === 'string' && Array.isArray(p.angles) && p.angles.length === NUM && p.angles.every(Number.isFinite)) {
+        out.push({ name: p.name.slice(0, 40), angles: p.angles.map((a) => clamp(Math.round(a), 0, 180)) });
+      }
+    }
+    if (!out.length) { toast('No valid poses found in that file.'); return; }
+    poses.push(...out); savePoses(); renderPoses();
+    toast(`Imported ${out.length} pose${out.length === 1 ? '' : 's'}.`);
+  }
+
+  // --------------------------------------------------------------- playback
+  function markPlaying(k) {
+    document.querySelectorAll('#poselist li').forEach((li, i) => li.classList.toggle('playing', i === k));
+  }
+  function updatePlayUI() {
+    const b = $('#playBtn');
+    b.textContent = playing ? 'Stop playback' : 'Play sequence';
+    b.disabled = !ready;
+  }
+  function stopPlayback() {
+    const was = playing;
+    playing = false;
+    markPlaying(-1);
+    updatePlayUI();
+    if (was) flushIdleWaiters();
+  }
+  async function pauseFor(ms) {
+    const end = performance.now() + ms;
+    while (playing && performance.now() < end) await sleep(Math.min(50, Math.max(0, end - performance.now())));
+  }
+  async function play() {
+    if (playing) { stopMotion(); return; }
+    if (!ready) return;
+    if (!poses.length) { toast('Save at least one pose first.'); return; }
+    const seq = poses.map((p) => ({ angles: p.angles.slice() }));
+    const dwell = clamp(parseInt($('#dwell').value, 10) || 0, 0, 60000);
+    playing = true;
+    updatePlayUI();
+    renderPoses();
+    try {
+      do {
+        for (let k = 0; k < seq.length && playing && ready; k++) {
+          markPlaying(k);
+          const maxDelta = goTo(seq[k].angles);
+          await waitIdle(Math.ceil(maxDelta / speed) * TICK_MS + 2500);
+          if (!playing) break;
+          await pauseFor(dwell);
+        }
+      } while (playing && ready && $('#loopCb').checked);
+    } finally {
+      stopPlayback();
+      renderPoses();
+    }
+  }
+
+  // ------------------------------------------------------------- controller
+  // Standard gamepad layout: axes 0/1 left stick, 2/3 right stick; buttons 0 A, 1 B, 2 X, 3 Y,
+  // 4 LB, 5 RB, 6 LT, 7 RT, 14 d-pad left, 15 d-pad right.
+  const PAD_DEADZONE = 0.15;
+  let padRate = clamp(parseInt(store.get('arm.padRate', 60), 10) || 60, 10, 180);
+  const padInvert = (() => {
+    const d = store.get('arm.padInvert', null);
+    return Array.isArray(d) && d.length === NUM ? d.map(Boolean) : Array(NUM).fill(false);
+  })();
+  const padAcc = Array(NUM).fill(null);   // sub-degree position while a stick is held
+  let padPrev = [];
+  let padLast = 0;
+  let padWasHere = false;
+
+  function padStatus(text) {
+    const e = $('#padStatus');
+    if (e.textContent !== text) e.textContent = text;
+  }
+
+  function firstPad() {
+    const list = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (const g of list) if (g && g.connected) return g;
+    return null;
+  }
+
+  function padFrame(now) {
+    requestAnimationFrame(padFrame);
+    const dt = padLast ? Math.min(0.1, (now - padLast) / 1000) : 0;
+    padLast = now;
+    const gp = firstPad();
+    if (!gp) {
+      if (padWasHere) {
+        padWasHere = false; padPrev = []; padAcc.fill(null);
+        rows.forEach((r) => r.classList.remove('driven'));
+      }
+      padStatus('No controller detected. Connect one, then press any button on it.');
+      return;
+    }
+    padWasHere = true;
+    padStatus('Connected: ' + gp.id +
+      (gp.mapping === 'standard' ? '' : '. This controller does not report the standard layout, so some inputs may not match the button list.') +
+      (ready ? '' : ' It moves the preview only until the arm is connected.'));
+
+    const axis = (k) => {
+      const v = gp.axes[k] || 0, a = Math.abs(v);
+      if (a < PAD_DEADZONE) return 0;
+      const t = (a - PAD_DEADZONE) / (1 - PAD_DEADZONE);
+      return Math.sign(v) * t * t;          // soft curve for fine control near the centre
+    };
+    const analog = (k) => { const b = gp.buttons[k]; return b ? (b.value || (b.pressed ? 1 : 0)) : 0; };
+    const down = (k) => !!(gp.buttons[k] && gp.buttons[k].pressed);
+    const edge = (k) => down(k) && !padPrev[k];
+
+    // stick up is negative on the Y axes, so flip them: right and up raise an angle
+    const input = [axis(0), -axis(1), -axis(3), analog(5) - analog(4), axis(2), analog(7) - analog(6)];
+    for (let i = 0; i < NUM; i++) {
+      let v = input[i];
+      if (padInvert[i]) v = -v;
+      if (v !== 0 && !playing) {
+        if (padAcc[i] === null) padAcc[i] = angles[i];
+        padAcc[i] = clamp(padAcc[i] + v * padRate * dt, limits[i][0], limits[i][1]);
+        const r = Math.round(padAcc[i]);
+        if (r !== angles[i]) setAngle(i, r);
+        rows[i].classList.add('driven');
+      } else {
+        padAcc[i] = null;
+        rows[i].classList.remove('driven');
+      }
+    }
+
+    if (edge(0)) homeAll();
+    if (edge(1)) stopMotion();
+    if (edge(2)) { savePose(); toast('Saved ' + poses[poses.length - 1].name + '.'); }
+    if (edge(3)) play();
+    if (edge(14) || edge(15)) {
+      $('#speed').value = clamp(speed + (edge(15) ? 1 : -1), 1, 10);
+      onSpeed();
+    }
+    padPrev = gp.buttons.map((b) => b.pressed);
+  }
+
+  function initController() {
+    const wrap = $('#padInvert');
+    JOINTS.map((_, k) => k).reverse().forEach((i) => {
+      const lab = document.createElement('label');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox'; cb.id = 'inv' + i; cb.checked = padInvert[i];
+      cb.addEventListener('change', () => { padInvert[i] = cb.checked; store.set('arm.padInvert', padInvert); });
+      lab.append(cb, document.createTextNode(JOINTS[i].name));
+      wrap.appendChild(lab);
+    });
+    const r = $('#padRate');
+    r.value = padRate;
+    paintSlider(r);
+    $('#padRateOut').textContent = padRate + '\u00b0/s';
+    r.addEventListener('input', () => {
+      padRate = parseInt(r.value, 10);
+      $('#padRateOut').textContent = padRate + '\u00b0/s';
+      store.set('arm.padRate', padRate);
+      paintSlider(r);
+    });
+    if (typeof navigator.getGamepads !== 'function') {
+      padStatus('This browser does not support game controllers.');
+      return;
+    }
+    requestAnimationFrame(padFrame);
+  }
+
+  // ------------------------------------------------------------------- init
+  function init() {
+    buildJoints();
+    $('#speed').value = speed;
+    $('#speedOut').textContent = speed;
+    paintSlider($('#speed'));
+    const proto = $('#protocol');
+    proto.value = protocol;
+    proto.addEventListener('change', () => {
+      protocol = proto.value === 'new' ? 'new' : 'legacy';
+      store.set('arm.protocol', protocol);
+    });
+    renderPoses();
+    drawArm();
+    initController();
+
+    if (!('serial' in navigator)) {
+      $('#unsupported').hidden = false;
+      connectBtn.disabled = true;
+    } else {
+      navigator.serial.addEventListener('disconnect', (e) => {
+        if (e.target === port) log('USB device unplugged', 'err');
+      });
+    }
+
+    connectBtn.addEventListener('click', () => { port ? disconnect() : connect(); });
+    $('#homeBtn').addEventListener('click', homeAll);
+    $('#stopBtn').addEventListener('click', stopMotion);
+    $('#releaseBtn').addEventListener('click', () => {
+      if (protocol === 'legacy') return;
+      stopPlayback();
+      pending.clear();
+      send('D');
+      setStateLine('Servos released and the arm may sag. The next move re-engages them.');
+    });
+    $('#speed').addEventListener('input', onSpeed);
+    $('#savePoseBtn').addEventListener('click', savePose);
+    $('#exportBtn').addEventListener('click', exportPoses);
+    $('#importBtn').addEventListener('click', () => $('#importFile').click());
+    $('#importFile').addEventListener('change', async (e) => {
+      const f = e.target.files && e.target.files[0];
+      if (f) importPoses(await f.text());
+      e.target.value = '';
+    });
+    $('#playBtn').addEventListener('click', play);
+
+    const raw = $('#raw');
+    const sendRaw = () => {
+      const t = raw.value.trim();
+      if (!t) return;
+      if (!ready && !writer) { toast('Connect first.'); return; }
+      send(t);
+      raw.value = '';
+    };
+    $('#rawBtn').addEventListener('click', sendRaw);
+    raw.addEventListener('keydown', (e) => { if (e.key === 'Enter') sendRaw(); });
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
